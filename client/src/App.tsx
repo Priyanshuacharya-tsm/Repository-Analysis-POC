@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Loader from './components/Loader';
 import JsonDisplay from './components/JsonDisplay';
+import AnalysisSummary from './components/AnalysisSummary';
+import GenerateDockerButton from './components/GenerateDockerButton';
 import './App.css';
 
 // API Configuration
@@ -25,6 +27,7 @@ interface Repository {
   };
 }
 
+// Legacy analysis result type (for backward compatibility)
 interface AnalysisResult {
   success: boolean;
   repository: string;
@@ -64,13 +67,48 @@ interface AnalysisResult {
   raw: Record<string, unknown>;
 }
 
+// NEW: Enhanced analysis types (abstracted for frontend)
+export interface RepoAnalysisSummary {
+  repository_name: string;
+  has_dockerfile: boolean;
+  has_dockerignore: boolean;
+  has_readme: boolean;
+  detected_ports: string[];
+  suggested_runtime: string | null;
+  detected_framework: string | null;
+}
+
+export interface ActionableItem {
+  item: 'dockerfile' | 'dockerignore' | 'readme';
+  is_present: boolean;
+  action_required: boolean;
+  frontend_component: string;
+}
+
+export interface EnhancedAnalysisResult {
+  success: boolean;
+  repo_analysis_summary: RepoAnalysisSummary;
+  actionable_items: ActionableItem[];
+  duration: string;
+}
+
+export interface DockerfileGenerationResult {
+  operation: 'dockerfile_generation';
+  status: 'success' | 'failed';
+  generated_file_path: string;
+  confirmation_tick: boolean;
+  dockerfile_content?: string;
+  error_message?: string;
+}
+
 interface UserInfo {
   username: string;
   avatar: string;
 }
 
 type ViewState = 'connect' | 'dashboard';
-type LoadingState = 'idle' | 'spawning' | 'analyzing' | 'generating' | 'fetching-repos';
+type LoadingState = 'idle' | 'spawning' | 'analyzing' | 'generating' | 'fetching-repos' | 'generating-dockerfile';
+type AnalysisMode = 'enhanced' | 'legacy';
 
 function App() {
   // Authentication state
@@ -87,6 +125,11 @@ function App() {
   // Analysis state
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+
+  // NEW: Enhanced analysis state
+  const [enhancedResult, setEnhancedResult] = useState<EnhancedAnalysisResult | null>(null);
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('enhanced');
+  const [dockerGenResult, setDockerGenResult] = useState<DockerfileGenerationResult | null>(null);
 
   // Parse URL params on mount (OAuth callback)
   useEffect(() => {
@@ -157,6 +200,8 @@ function App() {
     setUser(null);
     setView('connect');
     setResult(null);
+    setEnhancedResult(null);
+    setDockerGenResult(null);
     setError(null);
     setRepositories([]);
     setSelectedRepo(null);
@@ -167,15 +212,19 @@ function App() {
   const handleSelectRepo = useCallback((repo: Repository) => {
     setSelectedRepo(repo);
     setResult(null);
+    setEnhancedResult(null);
+    setDockerGenResult(null);
     setError(null);
   }, []);
 
-  // Handle repository analysis
+  // Handle repository analysis (enhanced mode)
   const handleAnalyze = useCallback(async () => {
     if (!selectedRepo || !token) return;
 
     setError(null);
     setResult(null);
+    setEnhancedResult(null);
+    setDockerGenResult(null);
 
     try {
       setLoadingState('spawning');
@@ -183,21 +232,39 @@ function App() {
 
       setLoadingState('analyzing');
 
-      const response = await axios.post<AnalysisResult>(
-        `${API_BASE_URL}/api/mcp/analyze`,
-        {
-          repository: selectedRepo.full_name,
-          token: token,
-        },
-        {
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+      if (analysisMode === 'enhanced') {
+        // NEW: Use enhanced analysis endpoint
+        const response = await axios.post<EnhancedAnalysisResult>(
+          `${API_BASE_URL}/api/mcp/analyze/enhanced`,
+          {
+            repository: selectedRepo.full_name,
+            token: token,
+          },
+          {
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
 
-      setLoadingState('generating');
-      await new Promise(resolve => setTimeout(resolve, 300));
+        setEnhancedResult(response.data);
+      } else {
+        // Legacy mode
+        const response = await axios.post<AnalysisResult>(
+          `${API_BASE_URL}/api/mcp/analyze`,
+          {
+            repository: selectedRepo.full_name,
+            token: token,
+          },
+          {
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
 
-      setResult(response.data);
+        setLoadingState('generating');
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        setResult(response.data);
+      }
+
       setLoadingState('idle');
 
     } catch (err) {
@@ -208,7 +275,58 @@ function App() {
         setError('An unexpected error occurred');
       }
     }
-  }, [selectedRepo, token]);
+  }, [selectedRepo, token, analysisMode]);
+
+  // NEW: Handle Dockerfile generation
+  const handleGenerateDockerfile = useCallback(async () => {
+    if (!selectedRepo || !token) return;
+
+    setError(null);
+    setDockerGenResult(null);
+
+    try {
+      setLoadingState('generating-dockerfile');
+
+      const response = await axios.post<DockerfileGenerationResult>(
+        `${API_BASE_URL}/api/mcp/generate/dockerfile`,
+        {
+          repository: selectedRepo.full_name,
+          token: token,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      setDockerGenResult(response.data);
+
+      // If successful, update the enhanced result to reflect the new Dockerfile
+      if (response.data.status === 'success' && enhancedResult) {
+        setEnhancedResult({
+          ...enhancedResult,
+          repo_analysis_summary: {
+            ...enhancedResult.repo_analysis_summary,
+            has_dockerfile: true,
+          },
+          actionable_items: enhancedResult.actionable_items.map(item =>
+            item.item === 'dockerfile'
+              ? { ...item, is_present: true, action_required: false }
+              : item
+          ),
+        });
+      }
+
+      setLoadingState('idle');
+
+    } catch (err) {
+      setLoadingState('idle');
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.message || err.message || 'Dockerfile generation failed');
+      } else {
+        setError('An unexpected error occurred during Dockerfile generation');
+      }
+    }
+  }, [selectedRepo, token, enhancedResult]);
 
   // Filter repositories based on search
   const filteredRepos = repositories.filter(repo =>
@@ -224,9 +342,13 @@ function App() {
       case 'spawning':
         return 'Spawning MCP Server...';
       case 'analyzing':
-        return 'Analyzing repository files...';
+        return analysisMode === 'enhanced'
+          ? 'Running enhanced analysis...'
+          : 'Analyzing repository files...';
       case 'generating':
         return 'Generating AI documentation...';
+      case 'generating-dockerfile':
+        return '🐳 Generating Dockerfile...';
       default:
         return '';
     }
@@ -403,7 +525,7 @@ function App() {
                 </div>
               )}
 
-              {repositories.length === 0 && loadingState !== 'fetching-repos' && (
+              {repositories.length === 0 && (
                 <div className="no-repos">
                   <p>No repositories found</p>
                   <button className="refresh-link" onClick={fetchRepositories}>
@@ -428,12 +550,31 @@ function App() {
                   )}
                 </div>
               </div>
+
+              {/* Analysis Mode Toggle */}
+              <div className="analysis-mode-toggle">
+                <button
+                  className={`mode-button ${analysisMode === 'enhanced' ? 'active' : ''}`}
+                  onClick={() => setAnalysisMode('enhanced')}
+                  disabled={isLoading}
+                >
+                  ✨ Enhanced
+                </button>
+                <button
+                  className={`mode-button ${analysisMode === 'legacy' ? 'active' : ''}`}
+                  onClick={() => setAnalysisMode('legacy')}
+                  disabled={isLoading}
+                >
+                  📊 Legacy
+                </button>
+              </div>
+
               <button
                 className="analyze-button"
                 onClick={handleAnalyze}
                 disabled={isLoading}
               >
-                {isLoading ? 'Analyzing...' : '🚀 Analyze Repository'}
+                {isLoading && loadingState !== 'generating-dockerfile' ? 'Analyzing...' : '🚀 Analyze Repository'}
               </button>
             </div>
 
@@ -447,14 +588,83 @@ function App() {
         )}
 
         {/* Loading State for Analysis */}
-        {(loadingState === 'spawning' || loadingState === 'analyzing' || loadingState === 'generating') && (
+        {(loadingState === 'spawning' || loadingState === 'analyzing' || loadingState === 'generating' || loadingState === 'generating-dockerfile') && (
           <section className="loading-section">
             <Loader message={getLoadingMessage()} />
           </section>
         )}
 
-        {/* Results Section */}
-        {result && !isLoading && (
+        {/* NEW: Enhanced Analysis Results */}
+        {enhancedResult && !isLoading && analysisMode === 'enhanced' && (
+          <section className="results-section enhanced-results">
+            <div className="results-header">
+              <h2 className="section-title">📊 Enhanced Analysis</h2>
+              <div className="result-meta">
+                <span className="repo-badge">{enhancedResult.repo_analysis_summary.repository_name}</span>
+                <span className="duration-badge">⏱️ {enhancedResult.duration}</span>
+              </div>
+            </div>
+
+            {/* Analysis Summary Component */}
+            <AnalysisSummary summary={enhancedResult.repo_analysis_summary} />
+
+            {/* Actionable Items */}
+            <div className="actionable-items-section">
+              <h3 className="subsection-title">🎯 Actionable Items</h3>
+              <div className="actionable-items-grid">
+                {enhancedResult.actionable_items.map((item) => (
+                  <div
+                    key={item.item}
+                    className={`actionable-item ${item.is_present ? 'present' : 'missing'}`}
+                  >
+                    <div className="actionable-item-header">
+                      <span className="item-icon">
+                        {item.item === 'dockerfile' && '🐳'}
+                        {item.item === 'dockerignore' && '📄'}
+                        {item.item === 'readme' && '📝'}
+                      </span>
+                      <span className="item-name">{item.item}</span>
+                      <span className={`item-status ${item.is_present ? 'found' : 'not-found'}`}>
+                        {item.is_present ? '✅ Found' : '❌ Missing'}
+                      </span>
+                    </div>
+
+                    {/* Show Generate Button for Dockerfile */}
+                    {item.item === 'dockerfile' && item.action_required && (
+                      <GenerateDockerButton
+                        onGenerate={handleGenerateDockerfile}
+                        isLoading={loadingState === 'generating-dockerfile'}
+                        result={dockerGenResult}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dockerfile Generation Success */}
+            {dockerGenResult?.status === 'success' && (
+              <div className="dockerfile-success">
+                <div className="success-header">
+                  <span className="success-icon">✅</span>
+                  <h3>Dockerfile Generated Successfully!</h3>
+                </div>
+                <p className="success-path">
+                  📁 Created at: <code>{dockerGenResult.generated_file_path}</code>
+                </p>
+                {dockerGenResult.dockerfile_content && (
+                  <div className="dockerfile-preview">
+                    <h4>Generated Dockerfile:</h4>
+                    <pre className="dockerfile-content">{dockerGenResult.dockerfile_content}</pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Legacy Results Section */}
+        {result && !isLoading && analysisMode === 'legacy' && (
           <section className="results-section">
             <div className="results-header">
               <h2 className="section-title">📊 Analysis Result</h2>
