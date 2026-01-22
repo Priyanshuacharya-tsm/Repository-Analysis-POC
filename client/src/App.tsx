@@ -403,7 +403,7 @@ function App() {
                 </div>
               )}
 
-              {repositories.length === 0 && loadingState !== 'fetching-repos' && (
+              {repositories.length === 0 && (
                 <div className="no-repos">
                   <p>No repositories found</p>
                   <button className="refresh-link" onClick={fetchRepositories}>
