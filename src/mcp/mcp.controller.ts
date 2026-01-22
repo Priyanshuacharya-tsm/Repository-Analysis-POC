@@ -2,9 +2,19 @@ import { Controller, Post, Body, Logger, HttpCode, HttpStatus } from '@nestjs/co
 import { McpService, RepositoryAnalysis } from './mcp.service';
 import { GeminiService } from '../gemini/gemini.service';
 import { AnalyzeRepoDto } from './dto/analyze-repo.dto';
+import {
+    RepoAnalysisResponse,
+    DockerfileGenerationResponse,
+} from './dto/repo-analysis-summary.dto';
 
 /**
  * McpController - Returns structured JSON analysis
+ * 
+ * Endpoints:
+ * - POST /analyze: Full analysis with AI documentation (legacy)
+ * - POST /analyze/raw: Raw analysis without AI (legacy)
+ * - POST /analyze/enhanced: Enhanced analysis with abstracted frontend response
+ * - POST /generate/dockerfile: Generate and commit Dockerfile to repository
  */
 @Controller('mcp')
 export class McpController {
@@ -69,5 +79,46 @@ export class McpController {
             },
             raw: analysis,
         };
+    }
+
+    /**
+     * Enhanced analysis with abstracted frontend response
+     * Returns minimal, clean JSON structure for UI consumption
+     */
+    @Post('analyze/enhanced')
+    @HttpCode(HttpStatus.OK)
+    async analyzeRepositoryEnhanced(@Body() dto: AnalyzeRepoDto): Promise<RepoAnalysisResponse> {
+        this.logger.log(`📊 Enhanced analysis: ${dto.repository}`);
+
+        const result = await this.mcpService.analyzeRepositoryEnhanced(dto.token, dto.repository);
+
+        this.logger.log(`✅ Enhanced analysis complete: ${result.duration}`);
+        return result;
+    }
+
+    /**
+     * Generate and commit Dockerfile to repository
+     * Uses MCP create_or_update_file tool
+     */
+    @Post('generate/dockerfile')
+    @HttpCode(HttpStatus.OK)
+    async generateDockerfile(
+        @Body() dto: AnalyzeRepoDto & { branch?: string },
+    ): Promise<DockerfileGenerationResponse> {
+        this.logger.log(`🐳 Generating Dockerfile for: ${dto.repository}`);
+
+        const result = await this.mcpService.generateDockerfile(
+            dto.token,
+            dto.repository,
+            dto.branch,
+        );
+
+        if (result.status === 'success') {
+            this.logger.log(`✅ Dockerfile generated successfully`);
+        } else {
+            this.logger.error(`❌ Dockerfile generation failed: ${result.error_message}`);
+        }
+
+        return result;
     }
 }
