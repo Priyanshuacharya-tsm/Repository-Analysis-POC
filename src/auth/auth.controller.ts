@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Query, Body, Res, Logger, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
-import { AuthService, GitHubRepository } from './auth.service';
+import { AuthService, GitHubRepository, GitHubBranch } from './auth.service';
 
 /**
  * AuthController handles GitHub OAuth endpoints and user data.
@@ -102,6 +102,41 @@ export class AuthController {
         } catch (error) {
             this.logger.error(`Failed to fetch repositories: ${(error as Error).message}`);
             return { success: false, repositories: [] };
+        }
+    }
+
+    /**
+     * Fetches branches for a specific repository.
+     * Requires the user's access token and repository name in the request body.
+     */
+    @Post('branches')
+    async getBranches(
+        @Body('token') token: string,
+        @Body('repository') repository: string,
+    ): Promise<{ success: boolean; branches: GitHubBranch[]; error?: string }> {
+        this.logger.log(`🌿 Fetching branches for: ${repository}`);
+
+        if (!token) {
+            this.logger.error('No token provided for branch fetch');
+            return { success: false, branches: [], error: 'No token provided' };
+        }
+
+        if (!repository || !repository.includes('/')) {
+            this.logger.error('Invalid repository format');
+            return { success: false, branches: [], error: 'Invalid repository format. Use owner/repo' };
+        }
+
+        try {
+            const branches = await this.authService.fetchRepositoryBranches(token, repository);
+            this.logger.log(`✅ Returned ${branches.length} branches`);
+
+            return {
+                success: true,
+                branches,
+            };
+        } catch (error) {
+            this.logger.error(`Failed to fetch branches: ${(error as Error).message}`);
+            return { success: false, branches: [], error: (error as Error).message };
         }
     }
 }

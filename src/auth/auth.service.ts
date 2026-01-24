@@ -193,6 +193,59 @@ export class AuthService {
     }
 
     /**
+     * Fetches all branches for a specific repository.
+     * @param accessToken - The GitHub access token
+     * @param repository - Repository in "owner/repo" format
+     */
+    async fetchRepositoryBranches(accessToken: string, repository: string): Promise<GitHubBranch[]> {
+        this.logger.log(`🌿 Fetching branches for repository: ${repository}`);
+
+        try {
+            const allBranches: GitHubBranch[] = [];
+            let page = 1;
+            const perPage = 100;
+
+            // Paginate through all branches
+            while (true) {
+                const response = await axios.get<GitHubApiBranch[]>(
+                    `https://api.github.com/repos/${repository}/branches`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                            Accept: 'application/vnd.github.v3+json',
+                        },
+                        params: {
+                            per_page: perPage,
+                            page,
+                        },
+                    },
+                );
+
+                if (response.data.length === 0) break;
+
+                const branches = response.data.map((branch) => ({
+                    name: branch.name,
+                    protected: branch.protected,
+                }));
+
+                allBranches.push(...branches);
+
+                if (response.data.length < perPage) break;
+                page++;
+
+                // Safety limit
+                if (page > 10) break;
+            }
+
+            this.logger.log(`✅ Fetched ${allBranches.length} branches for ${repository}`);
+            return allBranches;
+        } catch (error) {
+            this.logger.error(`❌ Failed to fetch branches: ${(error as Error).message}`);
+            throw new UnauthorizedException('Failed to fetch branches. Repository may not exist or you may not have access.');
+        }
+    }
+
+    /**
      * Returns the frontend URL for redirect.
      */
     getFrontendUrl(): string {
@@ -247,5 +300,19 @@ export interface GitHubRepository {
     owner: {
         login: string;
         avatar_url: string;
+    };
+}
+
+export interface GitHubBranch {
+    name: string;
+    protected: boolean;
+}
+
+interface GitHubApiBranch {
+    name: string;
+    protected: boolean;
+    commit: {
+        sha: string;
+        url: string;
     };
 }

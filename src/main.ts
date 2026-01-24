@@ -25,7 +25,7 @@ async function bootstrap() {
 
   // Global prefix for API routes (auth routes excluded)
   app.setGlobalPrefix('api', {
-    exclude: ['auth/login', 'auth/callback', 'auth/repositories'],
+    exclude: ['auth/login', 'auth/callback', 'auth/repositories', 'auth/branches'],
   });
 
   const port = process.env.PORT ?? 3000;
