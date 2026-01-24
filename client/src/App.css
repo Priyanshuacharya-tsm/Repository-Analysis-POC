@@ -1408,3 +1408,452 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* ========== SMART ANALYSIS STYLES ========== */
+
+/* Repository Input Container */
+.repo-input-container {
+  margin-bottom: 1.5rem;
+}
+
+.repo-input-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.repo-input {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.repo-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.repo-input::placeholder {
+  color: var(--text-muted);
+}
+
+.fetch-branches-button {
+  padding: 0.875rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fetch-branches-button:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.fetch-branches-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Branch Select Container */
+.branch-select-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.branch-loading {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  display: flex;
+  justify-content: center;
+}
+
+.branch-select {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.branch-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.branch-select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+/* Selected Branch Name Badge */
+.selected-branch-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 20px;
+  margin-left: 0.5rem;
+}
+
+/* Branch Input Container (legacy, kept for reference) */
+.branch-input-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.branch-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.branch-input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-family: 'Fira Code', 'Consolas', monospace;
+  transition: var(--transition-fast);
+}
+
+.branch-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.branch-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Smart Results Section */
+.smart-results {
+  animation: fadeIn 0.3s ease;
+}
+
+.smart-results .results-header {
+  margin-bottom: 1.5rem;
+}
+
+.branch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 20px;
+}
+
+/* Smart Analysis Card */
+.smart-analysis-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.analysis-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.analysis-row.single {
+  grid-template-columns: 1fr;
+}
+
+.analysis-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.analysis-item.full-width {
+  width: 100%;
+}
+
+.analysis-item .item-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.analysis-item .item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.analysis-item .item-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.analysis-item .item-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.analysis-item .item-value.code {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: var(--bg-card);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--accent-primary);
+}
+
+.analysis-item .item-value.language-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: var(--accent-gradient);
+  color: white;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.analysis-item .item-value.present {
+  color: var(--success);
+}
+
+.analysis-item .item-value.missing {
+  color: var(--error);
+}
+
+/* Analysis Section */
+.analysis-section {
+  margin-bottom: 1.5rem;
+}
+
+.analysis-section .section-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Tags Container */
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tags-container.env-vars {
+  gap: 0.4rem;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 20px;
+  transition: var(--transition-fast);
+}
+
+.tag.framework-tag {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.tag.framework-tag:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+}
+
+.tag.dependency-tag {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(234, 88, 12, 0.2) 100%);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.tag.dependency-tag:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3) 0%, rgba(234, 88, 12, 0.3) 100%);
+}
+
+.tag.env-tag {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.75rem;
+}
+
+.tag.env-tag:hover {
+  background: rgba(16, 185, 129, 0.25);
+}
+
+.no-data {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Error Banner */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: #fca5a5;
+  margin-bottom: 1rem;
+}
+
+.error-banner .error-icon {
+  font-size: 1.25rem;
+}
+
+/* ========== Dockerfile Generation Styles ========== */
+
+/* Docker status row with Generate button */
+.docker-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Generate Dockerfile Button */
+.generate-dockerfile-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.generate-dockerfile-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0284c7 0%, #0891b2 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+
+.generate-dockerfile-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dockerfile Success Banner */
+.dockerfile-success-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-md);
+  margin-top: 1rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.dockerfile-success-banner .success-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.dockerfile-success-banner .success-content {
+  flex: 1;
+}
+
+.dockerfile-success-banner .success-content strong {
+  color: #34d399;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.dockerfile-success-banner .success-content p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.dockerfile-success-banner .success-content code {
+  background: rgba(16, 185, 129, 0.2);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: #34d399;
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

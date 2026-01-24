@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Loader from './components/Loader';
 import JsonDisplay from './components/JsonDisplay';
-import AnalysisSummary from './components/AnalysisSummary';
-import GenerateDockerButton from './components/GenerateDockerButton';
 import './App.css';
 
 // API Configuration
@@ -27,78 +25,38 @@ interface Repository {
   };
 }
 
-// Legacy analysis result type (for backward compatibility)
-interface AnalysisResult {
+// Smart Analysis types (LLM-powered analysis)
+export interface SmartAnalysisResult {
+  detected_language: string;
+  detected_version: string | null;
+  is_docker_present: boolean;
+  dockerfile_location: string | null;
+  detected_frameworks: string[];
+  detected_dependencies: string[];
+  detected_start_cmd: string | null;
+  detected_build_cmd: string | null;
+  env_vars_needed: string[];
+}
+
+export interface SmartAnalysisResponse {
   success: boolean;
   repository: string;
+  branch: string;
   duration: string;
-  analysis: {
-    detected: {
-      language: string | null;
-      frameworks: string[];
-      databases: string[];
-      ports: string[];
-      envVars: string[];
-      runtime: Record<string, string>;
-      buildConfig: {
-        name?: string;
-        version?: string;
-        description?: string;
-        scripts?: Record<string, string>;
-        engines?: Record<string, string>;
-      };
-      docker: {
-        exists: boolean;
-        baseImage?: string | null;
-        exposedPorts?: string[];
-        workdir?: string | null;
-        cmd?: string | null;
-        composeServices?: string[];
-      } | null;
-      cicd: {
-        platform: string;
-        configured: boolean;
-      } | null;
-    };
-    missing: string[];
-    filesAnalyzed: string[];
-  };
-  documentation: string;
-  raw: Record<string, unknown>;
+  analysis: SmartAnalysisResult;
+  error?: string;
 }
 
-// NEW: Enhanced analysis types (abstracted for frontend)
-export interface RepoAnalysisSummary {
-  repository_name: string;
-  has_dockerfile: boolean;
-  has_dockerignore: boolean;
-  has_readme: boolean;
-  detected_ports: string[];
-  suggested_runtime: string | null;
-  detected_framework: string | null;
-}
-
-export interface ActionableItem {
-  item: 'dockerfile' | 'dockerignore' | 'readme';
-  is_present: boolean;
-  action_required: boolean;
-  frontend_component: string;
-}
-
-export interface EnhancedAnalysisResult {
+// Dockerfile generation response
+export interface DockerfileGenerationResponse {
   success: boolean;
-  repo_analysis_summary: RepoAnalysisSummary;
-  actionable_items: ActionableItem[];
+  repository: string;
+  branch: string;
   duration: string;
-}
-
-export interface DockerfileGenerationResult {
-  operation: 'dockerfile_generation';
-  status: 'success' | 'failed';
-  generated_file_path: string;
-  confirmation_tick: boolean;
+  files_created: string[];
   dockerfile_content?: string;
-  error_message?: string;
+  dockerignore_content?: string;
+  error?: string;
 }
 
 interface UserInfo {
@@ -106,9 +64,14 @@ interface UserInfo {
   avatar: string;
 }
 
+// Branch type for dropdown
+interface Branch {
+  name: string;
+  protected: boolean;
+}
+
 type ViewState = 'connect' | 'dashboard';
-type LoadingState = 'idle' | 'spawning' | 'analyzing' | 'generating' | 'fetching-repos' | 'generating-dockerfile';
-type AnalysisMode = 'enhanced' | 'legacy';
+type LoadingState = 'idle' | 'spawning' | 'analyzing' | 'fetching-repos' | 'fetching-branches' | 'generating-dockerfile';
 
 function App() {
   // Authentication state
@@ -120,16 +83,20 @@ function App() {
   // Repository state
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Branch state - dynamically fetched when repo is selected
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
 
   // Analysis state
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
-  const [result, setResult] = useState<AnalysisResult | null>(null);
 
-  // NEW: Enhanced analysis state
-  const [enhancedResult, setEnhancedResult] = useState<EnhancedAnalysisResult | null>(null);
-  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('enhanced');
-  const [dockerGenResult, setDockerGenResult] = useState<DockerfileGenerationResult | null>(null);
+  // Smart analysis state
+  const [smartResult, setSmartResult] = useState<SmartAnalysisResponse | null>(null);
+
+  // Dockerfile generation state
+  const [dockerfileGenerated, setDockerfileGenerated] = useState<DockerfileGenerationResponse | null>(null);
 
   // Parse URL params on mount (OAuth callback)
   useEffect(() => {
@@ -163,6 +130,13 @@ function App() {
     }
   }, [token, view]);
 
+  // Fetch branches when a repository is selected
+  useEffect(() => {
+    if (selectedRepo && token) {
+      fetchBranches(selectedRepo.full_name);
+    }
+  }, [selectedRepo, token]);
+
   // Fetch user repositories
   const fetchRepositories = useCallback(async () => {
     if (!token) return;
@@ -189,6 +163,42 @@ function App() {
     }
   }, [token]);
 
+  // Fetch branches for a repository
+  const fetchBranches = useCallback(async (repository: string) => {
+    if (!token || !repository) return;
+
+    setLoadingState('fetching-branches');
+    setBranches([]);
+    setSelectedBranch('');
+
+    try {
+      const response = await axios.post<{ success: boolean; branches: Branch[]; error?: string }>(
+        `${API_BASE_URL}/auth/branches`,
+        { token, repository },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (response.data.success && response.data.branches.length > 0) {
+        setBranches(response.data.branches);
+        // Auto-select main or master branch, or first branch
+        const defaultBranch = response.data.branches.find(b => b.name === 'main') 
+          || response.data.branches.find(b => b.name === 'master')
+          || response.data.branches[0];
+        setSelectedBranch(defaultBranch?.name || '');
+      } else {
+        setError(response.data.error || 'No branches found');
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Failed to fetch branches');
+      } else {
+        setError('Failed to fetch branches');
+      }
+    } finally {
+      setLoadingState('idle');
+    }
+  }, [token]);
+
   // Handle GitHub login
   const handleLogin = useCallback(() => {
     window.location.href = `${API_BASE_URL}/auth/login`;
@@ -199,32 +209,84 @@ function App() {
     setToken(null);
     setUser(null);
     setView('connect');
-    setResult(null);
-    setEnhancedResult(null);
-    setDockerGenResult(null);
+    setSmartResult(null);
+    setDockerfileGenerated(null);
     setError(null);
     setRepositories([]);
     setSelectedRepo(null);
     setSearchQuery('');
+    setBranches([]);
+    setSelectedBranch('');
   }, []);
 
   // Handle repository selection
   const handleSelectRepo = useCallback((repo: Repository) => {
     setSelectedRepo(repo);
-    setResult(null);
-    setEnhancedResult(null);
-    setDockerGenResult(null);
+    setSmartResult(null);
+    setDockerfileGenerated(null);
     setError(null);
+    // Branches will be fetched automatically via useEffect
   }, []);
 
-  // Handle repository analysis (enhanced mode)
-  const handleAnalyze = useCallback(async () => {
-    if (!selectedRepo || !token) return;
+  // Handle Dockerfile generation
+  const handleGenerateDockerfile = useCallback(async () => {
+    if (!selectedRepo || !token || !selectedBranch || !smartResult) {
+      setError('Please analyze the repository first');
+      return;
+    }
 
     setError(null);
-    setResult(null);
-    setEnhancedResult(null);
-    setDockerGenResult(null);
+    setDockerfileGenerated(null);
+    setLoadingState('generating-dockerfile');
+
+    try {
+      const response = await axios.post<DockerfileGenerationResponse>(
+        `${API_BASE_URL}/api/mcp/generate/dockerfile`,
+        {
+          repository: selectedRepo.full_name,
+          token: token,
+          branch: selectedBranch,
+          analysisResult: smartResult.analysis,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      setDockerfileGenerated(response.data);
+      
+      // Update the analysis result to show Docker is now present
+      if (response.data.success && smartResult) {
+        setSmartResult({
+          ...smartResult,
+          analysis: {
+            ...smartResult.analysis,
+            is_docker_present: true,
+            dockerfile_location: './Dockerfile',
+          },
+        });
+      }
+      
+      setLoadingState('idle');
+    } catch (err) {
+      setLoadingState('idle');
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.message || err.message || 'Dockerfile generation failed');
+      } else {
+        setError('An unexpected error occurred');
+      }
+    }
+  }, [selectedRepo, token, selectedBranch, smartResult]);
+
+  // Handle repository analysis
+  const handleAnalyze = useCallback(async () => {
+    if (!selectedRepo || !token || !selectedBranch) {
+      setError('Please select a repository and branch');
+      return;
+    }
+
+    setError(null);
+    setSmartResult(null);
 
     try {
       setLoadingState('spawning');
@@ -232,39 +294,20 @@ function App() {
 
       setLoadingState('analyzing');
 
-      if (analysisMode === 'enhanced') {
-        // NEW: Use enhanced analysis endpoint
-        const response = await axios.post<EnhancedAnalysisResult>(
-          `${API_BASE_URL}/api/mcp/analyze/enhanced`,
-          {
-            repository: selectedRepo.full_name,
-            token: token,
-          },
-          {
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+      // Use smart analysis endpoint with branch
+      const response = await axios.post<SmartAnalysisResponse>(
+        `${API_BASE_URL}/api/mcp/analyze/smart`,
+        {
+          repository: selectedRepo.full_name,
+          token: token,
+          branch: selectedBranch,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
 
-        setEnhancedResult(response.data);
-      } else {
-        // Legacy mode
-        const response = await axios.post<AnalysisResult>(
-          `${API_BASE_URL}/api/mcp/analyze`,
-          {
-            repository: selectedRepo.full_name,
-            token: token,
-          },
-          {
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-
-        setLoadingState('generating');
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        setResult(response.data);
-      }
-
+      setSmartResult(response.data);
       setLoadingState('idle');
 
     } catch (err) {
@@ -275,58 +318,7 @@ function App() {
         setError('An unexpected error occurred');
       }
     }
-  }, [selectedRepo, token, analysisMode]);
-
-  // NEW: Handle Dockerfile generation
-  const handleGenerateDockerfile = useCallback(async () => {
-    if (!selectedRepo || !token) return;
-
-    setError(null);
-    setDockerGenResult(null);
-
-    try {
-      setLoadingState('generating-dockerfile');
-
-      const response = await axios.post<DockerfileGenerationResult>(
-        `${API_BASE_URL}/api/mcp/generate/dockerfile`,
-        {
-          repository: selectedRepo.full_name,
-          token: token,
-        },
-        {
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-
-      setDockerGenResult(response.data);
-
-      // If successful, update the enhanced result to reflect the new Dockerfile
-      if (response.data.status === 'success' && enhancedResult) {
-        setEnhancedResult({
-          ...enhancedResult,
-          repo_analysis_summary: {
-            ...enhancedResult.repo_analysis_summary,
-            has_dockerfile: true,
-          },
-          actionable_items: enhancedResult.actionable_items.map(item =>
-            item.item === 'dockerfile'
-              ? { ...item, is_present: true, action_required: false }
-              : item
-          ),
-        });
-      }
-
-      setLoadingState('idle');
-
-    } catch (err) {
-      setLoadingState('idle');
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.message || err.message || 'Dockerfile generation failed');
-      } else {
-        setError('An unexpected error occurred during Dockerfile generation');
-      }
-    }
-  }, [selectedRepo, token, enhancedResult]);
+  }, [selectedRepo, token, selectedBranch]);
 
   // Filter repositories based on search
   const filteredRepos = repositories.filter(repo =>
@@ -339,16 +331,14 @@ function App() {
     switch (loadingState) {
       case 'fetching-repos':
         return 'Loading your repositories...';
+      case 'fetching-branches':
+        return 'Fetching repository branches...';
       case 'spawning':
         return 'Spawning MCP Server...';
       case 'analyzing':
-        return analysisMode === 'enhanced'
-          ? 'Running enhanced analysis...'
-          : 'Analyzing repository files...';
-      case 'generating':
-        return 'Generating AI documentation...';
+        return `🧠 Running smart LLM analysis on branch: ${selectedBranch}...`;
       case 'generating-dockerfile':
-        return '🐳 Generating Dockerfile...';
+        return `🐳 Generating Dockerfile and pushing to ${selectedBranch}...`;
       default:
         return '';
     }
@@ -537,7 +527,7 @@ function App() {
           )}
         </section>
 
-        {/* Selected Repository & Analyze */}
+        {/* Selected Repository & Branch Selection */}
         {selectedRepo && (
           <section className="analyze-section">
             <div className="selected-repo-card">
@@ -551,30 +541,40 @@ function App() {
                 </div>
               </div>
 
-              {/* Analysis Mode Toggle */}
-              <div className="analysis-mode-toggle">
-                <button
-                  className={`mode-button ${analysisMode === 'enhanced' ? 'active' : ''}`}
-                  onClick={() => setAnalysisMode('enhanced')}
-                  disabled={isLoading}
-                >
-                  ✨ Enhanced
-                </button>
-                <button
-                  className={`mode-button ${analysisMode === 'legacy' ? 'active' : ''}`}
-                  onClick={() => setAnalysisMode('legacy')}
-                  disabled={isLoading}
-                >
-                  📊 Legacy
-                </button>
-              </div>
+              {/* Branch Selection Dropdown */}
+              {loadingState === 'fetching-branches' && (
+                <div className="branch-loading">
+                  <Loader message="Loading branches..." />
+                </div>
+              )}
+
+              {branches.length > 0 && loadingState !== 'fetching-branches' && (
+                <div className="branch-select-container">
+                  <label htmlFor="branch-select" className="branch-label">
+                    🌿 Select Branch:
+                  </label>
+                  <select
+                    id="branch-select"
+                    className="branch-select"
+                    value={selectedBranch}
+                    onChange={(e) => setSelectedBranch(e.target.value)}
+                    disabled={isLoading}
+                  >
+                    {branches.map((branch) => (
+                      <option key={branch.name} value={branch.name}>
+                        {branch.name} {branch.protected ? '🔒' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <button
                 className="analyze-button"
                 onClick={handleAnalyze}
-                disabled={isLoading}
+                disabled={isLoading || !selectedBranch}
               >
-                {isLoading && loadingState !== 'generating-dockerfile' ? 'Analyzing...' : '🚀 Analyze Repository'}
+                {isLoading ? 'Analyzing...' : '🚀 Analyze Repository'}
               </button>
             </div>
 
@@ -588,144 +588,169 @@ function App() {
         )}
 
         {/* Loading State for Analysis */}
-        {(loadingState === 'spawning' || loadingState === 'analyzing' || loadingState === 'generating' || loadingState === 'generating-dockerfile') && (
+        {(loadingState === 'spawning' || loadingState === 'analyzing' || loadingState === 'generating-dockerfile') && (
           <section className="loading-section">
             <Loader message={getLoadingMessage()} />
           </section>
         )}
 
-        {/* NEW: Enhanced Analysis Results */}
-        {enhancedResult && !isLoading && analysisMode === 'enhanced' && (
-          <section className="results-section enhanced-results">
+        {/* Smart Analysis Results (LLM-Powered) */}
+        {smartResult && !isLoading && (
+          <section className="results-section smart-results">
             <div className="results-header">
-              <h2 className="section-title">📊 Enhanced Analysis</h2>
+              <h2 className="section-title">🧠 Smart Analysis Results</h2>
               <div className="result-meta">
-                <span className="repo-badge">{enhancedResult.repo_analysis_summary.repository_name}</span>
-                <span className="duration-badge">⏱️ {enhancedResult.duration}</span>
+                <span className="repo-badge">{smartResult.repository}</span>
+                <span className="branch-badge">🌿 {smartResult.branch}</span>
+                <span className="duration-badge">⏱️ {smartResult.duration}</span>
               </div>
             </div>
 
-            {/* Analysis Summary Component */}
-            <AnalysisSummary summary={enhancedResult.repo_analysis_summary} />
+            {smartResult.error && (
+              <div className="error-banner">
+                <span className="error-icon">⚠️</span>
+                {smartResult.error}
+              </div>
+            )}
 
-            {/* Actionable Items */}
-            <div className="actionable-items-section">
-              <h3 className="subsection-title">🎯 Actionable Items</h3>
-              <div className="actionable-items-grid">
-                {enhancedResult.actionable_items.map((item) => (
-                  <div
-                    key={item.item}
-                    className={`actionable-item ${item.is_present ? 'present' : 'missing'}`}
-                  >
-                    <div className="actionable-item-header">
-                      <span className="item-icon">
-                        {item.item === 'dockerfile' && '🐳'}
-                        {item.item === 'dockerignore' && '📄'}
-                        {item.item === 'readme' && '📝'}
+            {/* Main Analysis Card */}
+            <div className="smart-analysis-card">
+              {/* Language & Version */}
+              <div className="analysis-row">
+                <div className="analysis-item">
+                  <span className="item-icon">💻</span>
+                  <div className="item-content">
+                    <span className="item-label">Language</span>
+                    <span className="item-value language-badge">
+                      {smartResult.analysis.detected_language}
+                    </span>
+                  </div>
+                </div>
+                <div className="analysis-item">
+                  <span className="item-icon">📦</span>
+                  <div className="item-content">
+                    <span className="item-label">Version</span>
+                    <span className="item-value">
+                      {smartResult.analysis.detected_version || 'Not detected'}
+                    </span>
+                  </div>
+                </div>
+                <div className="analysis-item">
+                  <span className="item-icon">🐳</span>
+                  <div className="item-content">
+                    <span className="item-label">Docker</span>
+                    <div className="docker-status-row">
+                      <span className={`item-value ${smartResult.analysis.is_docker_present ? 'present' : 'missing'}`}>
+                        {smartResult.analysis.is_docker_present ? '✅ Present' : '❌ Missing'}
                       </span>
-                      <span className="item-name">{item.item}</span>
-                      <span className={`item-status ${item.is_present ? 'found' : 'not-found'}`}>
-                        {item.is_present ? '✅ Found' : '❌ Missing'}
-                      </span>
+                      {!smartResult.analysis.is_docker_present && (
+                        <button 
+                          className="generate-dockerfile-btn"
+                          onClick={handleGenerateDockerfile}
+                          disabled={isLoading}
+                          title="Generate Dockerfile and push to repository"
+                        >
+                          🐳 Generate Dockerfile
+                        </button>
+                      )}
                     </div>
-
-                    {/* Show Generate Button for Dockerfile */}
-                    {item.item === 'dockerfile' && item.action_required && (
-                      <GenerateDockerButton
-                        onGenerate={handleGenerateDockerfile}
-                        isLoading={loadingState === 'generating-dockerfile'}
-                        result={dockerGenResult}
-                      />
-                    )}
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
 
-            {/* Dockerfile Generation Success */}
-            {dockerGenResult?.status === 'success' && (
-              <div className="dockerfile-success">
-                <div className="success-header">
+              {/* Dockerfile Location */}
+              {smartResult.analysis.dockerfile_location && (
+                <div className="analysis-row single">
+                  <div className="analysis-item full-width">
+                    <span className="item-icon">📁</span>
+                    <div className="item-content">
+                      <span className="item-label">Dockerfile Location</span>
+                      <code className="item-value code">{smartResult.analysis.dockerfile_location}</code>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Dockerfile Generated Success Message */}
+              {dockerfileGenerated?.success && (
+                <div className="dockerfile-success-banner">
                   <span className="success-icon">✅</span>
-                  <h3>Dockerfile Generated Successfully!</h3>
-                </div>
-                <p className="success-path">
-                  📁 Created at: <code>{dockerGenResult.generated_file_path}</code>
-                </p>
-                {dockerGenResult.dockerfile_content && (
-                  <div className="dockerfile-preview">
-                    <h4>Generated Dockerfile:</h4>
-                    <pre className="dockerfile-content">{dockerGenResult.dockerfile_content}</pre>
+                  <div className="success-content">
+                    <strong>Dockerfile created successfully!</strong>
+                    <p>Files pushed to <code>{dockerfileGenerated.branch}</code>: {dockerfileGenerated.files_created.join(', ')}</p>
                   </div>
-                )}
-              </div>
-            )}
-          </section>
-        )}
+                </div>
+              )}
 
-        {/* Legacy Results Section */}
-        {result && !isLoading && analysisMode === 'legacy' && (
-          <section className="results-section">
-            <div className="results-header">
-              <h2 className="section-title">📊 Analysis Result</h2>
-              <div className="result-meta">
-                <span className="repo-badge">{result.repository}</span>
-                <span className="duration-badge">⏱️ {result.duration}</span>
+              {/* Frameworks */}
+              <div className="analysis-section">
+                <h4 className="section-label">🚀 Detected Frameworks</h4>
+                <div className="tags-container">
+                  {smartResult.analysis.detected_frameworks.length > 0 ? (
+                    smartResult.analysis.detected_frameworks.map((framework, idx) => (
+                      <span key={idx} className="tag framework-tag">{framework}</span>
+                    ))
+                  ) : (
+                    <span className="no-data">No frameworks detected</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Dependencies */}
+              <div className="analysis-section">
+                <h4 className="section-label">🔗 External Dependencies</h4>
+                <div className="tags-container">
+                  {smartResult.analysis.detected_dependencies.length > 0 ? (
+                    smartResult.analysis.detected_dependencies.map((dep, idx) => (
+                      <span key={idx} className="tag dependency-tag">{dep}</span>
+                    ))
+                  ) : (
+                    <span className="no-data">No external dependencies detected</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Commands */}
+              <div className="analysis-row">
+                <div className="analysis-item">
+                  <span className="item-icon">▶️</span>
+                  <div className="item-content">
+                    <span className="item-label">Start Command</span>
+                    <code className="item-value code">
+                      {smartResult.analysis.detected_start_cmd || 'Not detected'}
+                    </code>
+                  </div>
+                </div>
+                <div className="analysis-item">
+                  <span className="item-icon">🔨</span>
+                  <div className="item-content">
+                    <span className="item-label">Build Command</span>
+                    <code className="item-value code">
+                      {smartResult.analysis.detected_build_cmd || 'Not detected'}
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Environment Variables */}
+              <div className="analysis-section">
+                <h4 className="section-label">🔐 Required Environment Variables</h4>
+                <div className="tags-container env-vars">
+                  {smartResult.analysis.env_vars_needed.length > 0 ? (
+                    smartResult.analysis.env_vars_needed.map((envVar, idx) => (
+                      <span key={idx} className="tag env-tag">{envVar}</span>
+                    ))
+                  ) : (
+                    <span className="no-data">No environment variables detected</span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Quick Stats */}
-            <div className="stats-grid">
-              <div className="stat-card">
-                <span className="stat-icon">📁</span>
-                <div className="stat-content">
-                  <span className="stat-value">{result.analysis?.filesAnalyzed?.length || 0}</span>
-                  <span className="stat-label">Files Analyzed</span>
-                </div>
-              </div>
-              <div className="stat-card">
-                <span className="stat-icon">🚀</span>
-                <div className="stat-content">
-                  <span className="stat-value">
-                    {result.analysis?.detected?.frameworks?.length || 0}
-                  </span>
-                  <span className="stat-label">Frameworks</span>
-                </div>
-              </div>
-              <div className="stat-card">
-                <span className="stat-icon">🐳</span>
-                <div className="stat-content">
-                  <span className="stat-value">
-                    {result.analysis?.detected?.docker?.exists ? 'Yes' : 'No'}
-                  </span>
-                  <span className="stat-label">Docker</span>
-                </div>
-              </div>
-              <div className="stat-card">
-                <span className="stat-icon">⚙️</span>
-                <div className="stat-content">
-                  <span className="stat-value">
-                    {result.analysis?.detected?.cicd?.configured ? 'Yes' : 'No'}
-                  </span>
-                  <span className="stat-label">CI/CD</span>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Documentation */}
-            {result.documentation && (
-              <div className="documentation-section">
-                <h3 className="subsection-title">📝 AI Generated Documentation</h3>
-                <div className="documentation-content">
-                  <pre>{result.documentation}</pre>
-                </div>
-              </div>
-            )}
-
-            {/* Raw JSON */}
+            {/* Raw JSON Toggle */}
             <div className="json-section">
               <h3 className="subsection-title">🔍 Raw Analysis Data</h3>
-              <JsonDisplay data={result.raw} />
+              <JsonDisplay data={smartResult as unknown as Record<string, unknown>} />
             </div>
           </section>
         )}
